@@ -36,6 +36,9 @@ struct Cli {
     /// Line to voice
     #[arg(short, long)]
     text: Option<String>,
+    /// Voice reference file
+    #[arg(short = 'r', long)]
+    voice_reference_file: Option<String>,
     /// Output filename
     #[arg(short, long)]
     output_filename: Option<String>,
@@ -62,57 +65,63 @@ async fn main() {
             5001
         }
     };
-    let model_dir = match cli.model_dir {
-        Some(string) => string,
-        None => panic!("No model dir specified."),
-    };
-    let voice_refs_dir = match cli.voice_refs_dir {
-        Some(string) => string,
-        None => panic!("No model dir specified."),
-    };
-    let text = match cli.text {
-        Some(text) => text,
-        None => panic!("No text to voice specified."),
-    };
-    let output_filename = match cli.output_filename {
-        Some(output_filename) => output_filename,
-        None => {
-            println!("Filename not set. Will be saved as 'voiced_file.mp3'");
-            "voiced_file.mp3".to_string()
+
+    let mut process_pid: u32 = 0;
+
+    match mode.as_str() {
+        "tts" => {
+            let model_dir = match cli.model_dir {
+                Some(string) => string,
+                None => panic!("No model directory specified."),
+            };
+            let voice_refs_dir = match cli.voice_refs_dir {
+                Some(string) => string,
+                None => panic!("No voice references directory specified."),
+            };
+            let text = match cli.text {
+                Some(text) => text,
+                None => panic!("No text to voice specified."),
+            };
+            let voice_reference_file = match cli.voice_reference_file {
+                Some(voice_reference_file) => voice_reference_file,
+                None => {
+                    println!("No voice reference file specified, output will use a random voice.");
+                    "".to_string()
+                }
+            };
+            let output_filename = match cli.output_filename {
+                Some(output_filename) => output_filename,
+                None => {
+                    println!("Filename not set. Will be saved as 'voiced_file.mp3'");
+                    "voiced_file.mp3".to_string()
+                }
+            };
+
+            process_pid =
+                match koboldcpp_start(&mode.to_string(), &host, &port, &model_dir, &voice_refs_dir)
+                    .await
+                {
+                    Ok(pid) => pid,
+                    Err(_) => panic!("Failed to start koboldcpp"),
+                };
+            let koboldtts_result = koboldcpp_tts_send_prompt(
+                &"http://localhost:5001/v1/audio/speech".to_owned(),
+                &output_filename.to_owned(),
+                &"kcpp".to_owned(),
+                &text.to_owned(),
+                &voice_reference_file.to_owned(),
+            )
+            .await;
+            match koboldtts_result {
+                Ok(_) => (),
+                Err(_) => (),
+            }
         }
-    };
-
-    // match mode.as_str() {
-    //     "tts" => todo!("Add stuff about TTS"),
-    //     "chat" => todo!("Add stuff about chatting"),
-    //     "music" => todo!("Add stuff about music"),
-    //     &_ => todo!("Deal with this"),
-    // }
-    let koboldcpp_pid = match koboldcpp_start(
-        &"tts".to_string(),
-        &host,
-        &port,
-        &model_dir,
-        &voice_refs_dir,
-    )
-    .await
-    {
-        Ok(pid) => pid,
-        Err(_) => panic!("Failed to start koboldcpp"),
-    };
-
-    let koboldtts_result = koboldcpp_tts_send_prompt(
-        &"http://localhost:5001/v1/audio/speech".to_owned(),
-        &output_filename.to_owned(),
-        &"kcpp".to_owned(),
-        &text.to_owned(),
-        &"test qwen 2.mp3".to_owned(),
-    )
-    .await;
-    match koboldtts_result {
-        Ok(_) => (),
-        Err(_) => (),
+        "chat" => todo!("Add stuff about chatting"),
+        "music" => todo!("Add stuff about music"),
+        &_ => todo!("Deal with this"),
     }
-    process_killer(&koboldcpp_pid);
+
+    process_killer(&process_pid);
     println!("Thanks for using llm-connect!");
 }
