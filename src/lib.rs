@@ -2,4 +2,4 @@
 pub mod connection;
 
 pub use connection::koboldcpp_start;
-pub use connection::koboldcpp_tts_send_prompt;
+pub use connection::openai_tts_send_prompt;

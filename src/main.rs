@@ -1,8 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
-use crate::connection::{
-    koboldcpp_start, koboldcpp_tts_send_prompt, llama_send_prompt, process_killer,
-};
+use crate::connection::{koboldcpp_start, openai_tts_send_prompt, process_killer};
 use clap::Parser;
 
 mod connection;
@@ -104,7 +102,7 @@ async fn main() {
                     Ok(pid) => pid,
                     Err(_) => panic!("Failed to start koboldcpp"),
                 };
-            let koboldtts_result = koboldcpp_tts_send_prompt(
+            let koboldtts_result = openai_tts_send_prompt(
                 &"http://localhost:5001/v1/audio/speech".to_owned(),
                 &output_filename.to_owned(),
                 &"kcpp".to_owned(),
