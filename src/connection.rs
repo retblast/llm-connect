@@ -6,6 +6,7 @@ use std::thread::{self, sleep};
 use std::time::Duration;
 use std::{fs::File, process::Command};
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+use tokio::process;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Message {
@@ -193,7 +194,7 @@ pub async fn koboldcpp_start(
     let koboldcpp_process = final_command.spawn()?;
 
     if !check_llm_alive_yet(host, port, &10_u8).await {
-        process_killer(&koboldcpp_process.id());
+        process_killer(&koboldcpp_process.id(), &"koboldcpp".to_string());
         panic!("koboldcpp took too long to start!");
     };
     //TODO: Having the PID is good for cleanup, but we have to check that it is up already
@@ -245,7 +246,7 @@ pub async fn openai_chat_send_prompt(
     let client = reqwest::Client::new();
     let request = openai_chat_build_prompt(system_prompt, user_prompt, temperature, max_tokens);
     let response: OpenAIChatResponse = client
-        .post(destination)
+        .post(destination.to_owned() + "/v1/chat/completions")
         .json(&request)
         .send()
         .await?
@@ -264,7 +265,7 @@ pub async fn openai_tts_send_prompt(
     let client = reqwest::Client::new();
     let request = openai_tts_build_prompt(model, input, voice);
     let response = client
-        .post(destination)
+        .post(destination.to_owned() + "/v1/audio/speech")
         .json(&request)
         .send()
         .await
@@ -281,24 +282,27 @@ pub async fn openai_tts_send_prompt(
 }
 
 // Just kills a process by its pid
-pub fn process_killer(pid_to_kill: &u32) {
+pub fn process_killer(pid_to_kill: &u32, process_name: &String) {
     // Only get processes, without tasks
     let sys = System::new_with_specifics(
         RefreshKind::nothing().with_processes(ProcessRefreshKind::everything().without_tasks()),
     );
     // Refresh
-    let koboldcpp_process = match sys.process(sysinfo::Pid::from_u32(*pid_to_kill)) {
+    let process = match sys.process(sysinfo::Pid::from_u32(*pid_to_kill)) {
         Some(process) => process,
-        None => panic!("Something went wrong: Koboldcpp PID is wrong."),
+        None => panic!("Something went wrong: {} PID is wrong.", process_name),
     };
-    match koboldcpp_process.kill_and_wait() {
+    match process.kill_and_wait() {
         Ok(result) => match result {
-            Some(exit_status) => println!("Koboldcpp exited with status: {}", exit_status),
-            None => panic!("Something happened when trying to wait and kill koboldcpp"),
+            Some(exit_status) => println!("{} exited with status: {}", process_name, exit_status),
+            None => panic!(
+                "Something happened when trying to wait and kill {}",
+                process_name
+            ),
         },
         Err(error) => panic!(
-            "Something went wrong when trying to kill and wait koboldcpp: {}",
-            error
+            "Something went wrong when trying to kill and wait for {}: {}",
+            process_name, error
         ),
     };
 }
