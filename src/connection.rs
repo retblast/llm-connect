@@ -159,6 +159,7 @@ pub async fn koboldcpp_start(
     port: &u32,
     model_dir: &String,
     voice_refs_dir: &String,
+    alive_retries: &u8,
 ) -> Result<u32, Box<dyn std::error::Error>> {
     let mut main_command = Command::new("koboldcpp");
     main_command
@@ -193,7 +194,7 @@ pub async fn koboldcpp_start(
     final_command.stderr(stderr_file);
     let koboldcpp_process = final_command.spawn()?;
 
-    if !check_llm_alive_yet(host, port, &10_u8).await {
+    if !check_llm_alive_yet(host, port, alive_retries).await {
         process_killer(&koboldcpp_process.id(), &"koboldcpp".to_string());
         panic!("koboldcpp took too long to start!");
     };
