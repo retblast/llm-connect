@@ -6,7 +6,6 @@ use std::thread::{self, sleep};
 use std::time::Duration;
 use std::{fs::File, process::Command};
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
-use tokio::process;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Message {
@@ -62,6 +61,14 @@ pub struct OpenAIChatResponse {
     pub choices: Vec<OpenAIChatResponseChoices>,
 }
 
+struct KoboldTTSConfig {
+    mode: String,
+    host: String,
+    port: u32,
+    model_dir: String,
+    voice_refs_dir: String,
+}
+
 // fn build_llama_prompt(
 //     system_prompt: &String,
 //     user_prompt: &String,
@@ -107,22 +114,16 @@ pub struct OpenAIChatResponse {
 //     return Ok(response);
 // }
 
-fn koboldcpp_configure_tts(
-    model_dir: &String,
-    voice_refs_dir: &String,
-    original_command: Command,
-) -> Command {
-    let mut tts_command = Command::from(original_command);
-    tts_command
-        .arg("--ttsgpu")
-        .arg("--ttsmodel")
-        .arg(format!("{model_dir}/Qwen3-TTS-12Hz-1.7B-Base-q8_0.gguf"))
-        .arg("--ttswavtokenizer")
-        .arg(format!("{model_dir}/qwen3-tts-tokenizer-q8_0.gguf"))
-        .arg("--ttsdir")
-        .arg(format!("{voice_refs_dir}"));
-    return tts_command;
-}
+// fn koboldcpp_configure_tts(
+//     model_dir: &String,
+//     voice_refs_dir: &String,
+//     original_command: Command,
+// ) -> Command {
+//     let mut tts_command = Command::from(original_command);
+//     tts_command
+
+//     return tts_command;
+// }
 
 fn koboldcpp_configure_chat(model_dir: &String, original_command: Command) -> Command {
     let mut chat_command = Command::from(original_command);
@@ -132,74 +133,111 @@ fn koboldcpp_configure_chat(model_dir: &String, original_command: Command) -> Co
     return chat_command;
 }
 
-pub async fn check_llm_alive_yet(host: &String, port: &u32, retries: &u8) -> bool {
+pub async fn check_llm_alive_yet(address: &String) -> bool {
     let client = reqwest::Client::new();
-    let mut response = client.get(format!("http://{host}:{port}")).send().await;
-    let mut response_code: u16 = 0;
-    let mut our_retries = retries.clone();
-    while our_retries > 0 {
+    let mut alive = false;
+    while !alive {
+        println!("Checking if the openai api endpoint is alive");
         sleep(Duration::new(1, 0));
-        our_retries -= 1;
-        response = client.get(format!("http://{host}:{port}")).send().await;
-        response_code = match response {
+        let response = client.get(format!("{address}")).send().await;
+        let response_code = match response {
             Ok(response_result) => response_result.status().as_u16(),
             Err(_) => 0,
         };
+        alive = match response_code {
+            200 => true,
+            _ => false,
+        };
     }
-    match response_code {
-        200 => true,
-        _ => false,
-    }
+    return alive;
 }
 
-// Returns the PID of the running koboldcpp instance
+// Make it generic someday
+impl KoboldTTSConfig {
+    fn build_command(&self) -> tokio::process::Command {
+        let host = &self.host;
+        let port = &self.port;
+        let model_dir = &self.model_dir;
+        let voice_refs_dir = &self.voice_refs_dir;
+        let mut main_command = tokio::process::Command::new("koboldcpp");
+        main_command
+            .arg("--host")
+            .arg(format!("{host}"))
+            .arg("--port")
+            .arg(format!("{port}"))
+            .arg("--gpulayers")
+            .arg("-1")
+            .arg("--threads")
+            // TODO: Autodetect this
+            // And optionally, let the user enter its value
+            .arg("16")
+            .arg("--usevulkan")
+            .arg("--ttsgpu")
+            .arg("--ttsmodel")
+            .arg(format!("{model_dir}/Qwen3-TTS-12Hz-1.7B-Base-q8_0.gguf"))
+            .arg("--ttswavtokenizer")
+            .arg(format!("{model_dir}/qwen3-tts-tokenizer-q8_0.gguf"))
+            .arg("--ttsdir")
+            .arg(format!("{voice_refs_dir}"));
+        main_command.kill_on_drop(true);
+        main_command
+    }
+}
+async fn koboldcpp_spawn(command: &mut tokio::process::Command) {
+    loop {
+        let mut koboldcpp_process = match command.spawn() {
+            Ok(child) => child,
+            Err(why) => panic!("Failed to spawn koboldcpp process, because of: {}", why),
+        };
+        let koboldcpp_status = koboldcpp_process.wait().await;
+
+        match koboldcpp_status {
+            Ok(_) => println!("Koboldcpp exited successfully."),
+            Err(why) => println!("Kobold did not exit cleanly: {}", why),
+        }
+    }
+}
+// Starts koboldcpp
 pub async fn koboldcpp_start(
     mode: &String,
     host: &String,
     port: &u32,
     model_dir: &String,
     voice_refs_dir: &String,
-    alive_retries: &u8,
-) -> Result<u32, Box<dyn std::error::Error>> {
-    let mut main_command = Command::new("koboldcpp");
-    main_command
-        .arg("--host")
-        .arg(format!("{host}"))
-        .arg("--port")
-        .arg(format!("{port}"))
-        .arg("--gpulayers")
-        .arg("-1")
-        .arg("--threads")
-        // TODO: Autodetect this
-        // And optionally, let the user enter its value
-        .arg("16")
-        .arg("--usevulkan");
+) {
+    let kobold_config = KoboldTTSConfig {
+        mode: mode.to_owned(),
+        host: host.to_owned(),
+        port: port.to_owned(),
+        model_dir: model_dir.to_owned(),
+        voice_refs_dir: voice_refs_dir.to_owned(),
+    };
+    // KoboldCPP puts initialization details here, and its last line includes where the http api lies
+    let stdout_file = match File::create("koboldcpp_stdout.txt") {
+        Ok(file) => file,
+        Err(why) => panic!("Failed to create stdout file, because of {}", why),
+    };
+    // And it puts here details about the generation operations
+    let stderr_file = match File::create("koboldcpp_stderr.txt") {
+        Ok(file) => file,
+        Err(why) => panic!("Failed to create stderr file, because of {}", why),
+    };
 
     // Just to have it initialized
-    let mut final_command = Command::new("ls");
+    let mut final_command = tokio::process::Command::new("ls");
     match mode.as_str() {
-        "tts" => final_command = koboldcpp_configure_tts(model_dir, voice_refs_dir, main_command),
-        "chat" => final_command = koboldcpp_configure_chat(model_dir, main_command),
+        "tts" => {
+            final_command = kobold_config.build_command();
+        }
+        // "chat" => final_command = koboldcpp_configure_chat(model_dir, main_command.into_std()),
         &_ => println!("Whoops @ koboldcpp_start"),
     }
-    // KoboldCPP puts initialization details here, and its last line includes where the http api lies
-    let stdout_file = File::create("koboldcpp_stdout.txt")?;
-    // And it puts here details about the generation operations
-    let stderr_file = File::create("koboldcpp_stderr.txt")?;
-
     // TODO: Make this print only by a flag
     //println!("{:?}", final_command);
     //
     final_command.stdout(stdout_file);
     final_command.stderr(stderr_file);
-    let koboldcpp_process = final_command.spawn()?;
-
-    if !check_llm_alive_yet(host, port, alive_retries).await {
-        process_killer(&koboldcpp_process.id(), &"koboldcpp".to_string());
-        panic!("koboldcpp took too long to start!");
-    };
-    //TODO: Having the PID is good for cleanup, but we have to check that it is up already
-    return Ok(koboldcpp_process.id());
+    tokio::spawn(async move { koboldcpp_spawn(&mut final_command).await });
 }
 
 fn openai_tts_build_prompt(model: &String, input: &String, voice: &String) -> OpenAIVoiceRequest {
@@ -238,7 +276,7 @@ fn openai_chat_build_prompt(
 // it returns the response, which is a vector of
 // "choices"
 pub async fn openai_chat_send_prompt(
-    destination: &String,
+    address: &String,
     system_prompt: &String,
     user_prompt: &String,
     temperature: &f32,
@@ -246,8 +284,11 @@ pub async fn openai_chat_send_prompt(
 ) -> Result<OpenAIChatResponse, reqwest::Error> {
     let client = reqwest::Client::new();
     let request = openai_chat_build_prompt(system_prompt, user_prompt, temperature, max_tokens);
+    if !check_llm_alive_yet(address).await {
+        println!("Waiting for koboldcpp to be ready...");
+    };
     let response: OpenAIChatResponse = client
-        .post(destination.to_owned() + "/v1/chat/completions")
+        .post(address.to_owned() + "/v1/chat/completions")
         .json(&request)
         .send()
         .await?
@@ -257,7 +298,7 @@ pub async fn openai_chat_send_prompt(
 }
 
 pub async fn openai_tts_send_prompt(
-    destination: &String,
+    address: &String,
     output_filename: &String,
     model: &String,
     input: &String,
@@ -265,8 +306,11 @@ pub async fn openai_tts_send_prompt(
 ) -> Result<File> {
     let client = reqwest::Client::new();
     let request = openai_tts_build_prompt(model, input, voice);
+    if !check_llm_alive_yet(address).await {
+        println!("Waiting for koboldcpp to be ready...");
+    };
     let response = client
-        .post(destination.to_owned() + "/v1/audio/speech")
+        .post(address.to_owned() + "/v1/audio/speech")
         .json(&request)
         .send()
         .await
