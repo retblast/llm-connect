@@ -65,8 +65,16 @@ struct KoboldTTSConfig {
     mode: String,
     host: String,
     port: u32,
-    model_dir: String,
+    model: String,
+    wavtokenizer: String,
     voice_refs_dir: String,
+}
+
+struct KoboldChatConfig {
+    mode: String,
+    host: String,
+    port: u32,
+    model: String,
 }
 
 // fn build_llama_prompt(
@@ -125,11 +133,11 @@ struct KoboldTTSConfig {
 //     return tts_command;
 // }
 
-fn koboldcpp_configure_chat(model_dir: &String, original_command: Command) -> Command {
+fn koboldcpp_configure_chat(model: &String, original_command: Command) -> Command {
     let mut chat_command = Command::from(original_command);
     chat_command
         .arg("--model")
-        .arg(format!("{model_dir}/pls_fill_me.gguf"));
+        .arg(format!("{model}"));
     return chat_command;
 }
 
@@ -157,7 +165,8 @@ impl KoboldTTSConfig {
     fn build_command(&self) -> tokio::process::Command {
         let host = &self.host;
         let port = &self.port;
-        let model_dir = &self.model_dir;
+        let model = &self.model;
+        let wavtokenizer = &self.wavtokenizer;
         let voice_refs_dir = &self.voice_refs_dir;
         let mut main_command = tokio::process::Command::new("koboldcpp");
         main_command
@@ -174,11 +183,35 @@ impl KoboldTTSConfig {
             .arg("--usevulkan")
             .arg("--ttsgpu")
             .arg("--ttsmodel")
-            .arg(format!("{model_dir}/Qwen3-TTS-12Hz-1.7B-Base-q8_0.gguf"))
+            .arg(format!("{model}"))
             .arg("--ttswavtokenizer")
-            .arg(format!("{model_dir}/qwen3-tts-tokenizer-q8_0.gguf"))
+            .arg(format!("{wavtokenizer}"))
             .arg("--ttsdir")
             .arg(format!("{voice_refs_dir}"));
+        main_command.kill_on_drop(true);
+        main_command
+    }
+}
+impl KoboldChatConfig {
+    fn build_command(&self) -> tokio::process::Command {
+        let host = &self.host;
+        let port = &self.port;
+        let model = &self.model;
+        let mut main_command = tokio::process::Command::new("koboldcpp");
+        main_command
+        .arg("--host")
+        .arg(format!("{host}"))
+        .arg("--port")
+        .arg(format!("{port}"))
+        .arg("--gpulayers")
+        .arg("-1")
+        .arg("--threads")
+        // TODO: Autodetect this
+        // And optionally, let the user enter its value
+        .arg("16")
+        .arg("--usevulkan")
+        .arg ("--model")
+        .arg(format!("{model}"));
         main_command.kill_on_drop(true);
         main_command
     }
@@ -202,16 +235,10 @@ pub async fn koboldcpp_start(
     mode: &String,
     host: &String,
     port: &u32,
-    model_dir: &String,
+    model: &String,
+    wavtokenizer: &String,
     voice_refs_dir: &String,
 ) {
-    let kobold_config = KoboldTTSConfig {
-        mode: mode.to_owned(),
-        host: host.to_owned(),
-        port: port.to_owned(),
-        model_dir: model_dir.to_owned(),
-        voice_refs_dir: voice_refs_dir.to_owned(),
-    };
     // KoboldCPP puts initialization details here, and its last line includes where the http api lies
     let stdout_file = match File::create("koboldcpp_stdout.txt") {
         Ok(file) => file,
@@ -222,14 +249,30 @@ pub async fn koboldcpp_start(
         Ok(file) => file,
         Err(why) => panic!("Failed to create stderr file, because of {}", why),
     };
-
     // Just to have it initialized
     let mut final_command = tokio::process::Command::new("ls");
     match mode.as_str() {
         "tts" => {
+            let kobold_config = KoboldTTSConfig {
+                mode: mode.to_owned(),
+                host: host.to_owned(),
+                port: port.to_owned(),
+                model: model.to_owned(),
+                wavtokenizer: wavtokenizer.to_owned(),
+                voice_refs_dir: voice_refs_dir.to_owned(),
+            };
             final_command = kobold_config.build_command();
-        }
-        // "chat" => final_command = koboldcpp_configure_chat(model_dir, main_command.into_std()),
+        },
+        "chat" => {
+                let kobold_config = KoboldChatConfig {
+                    mode: mode.to_owned(),
+                    host: host.to_owned(),
+                    port: port.to_owned(),
+                    model: model.to_owned(),
+                };
+                final_command = kobold_config.build_command();
+
+            },
         &_ => println!("Whoops @ koboldcpp_start"),
     }
     // TODO: Make this print only by a flag

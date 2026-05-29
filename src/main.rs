@@ -64,8 +64,6 @@ async fn main() {
         }
     };
 
-    let mut process_pid: u32 = 0;
-
     match mode.as_str() {
         "tts" => {
             let model_dir = match cli.model_dir {
@@ -94,16 +92,18 @@ async fn main() {
                     "voiced_file.mp3".to_string()
                 }
             };
-
-            process_pid =
-                match koboldcpp_start(&mode.to_string(), &host, &port, &model_dir, &voice_refs_dir)
-                    .await
-                {
-                    Ok(pid) => pid,
-                    Err(_) => panic!("Failed to start koboldcpp"),
-                };
+            println!("Starting koboldcpp");
+            // koboldcpp_start(&mode, &host, &port, &model_dir, &voice_refs_dir).await;
+            // process_pid =
+            //     match koboldcpp_start(&mode.to_string(), &host, &port, &model_dir, &voice_refs_dir)
+            //         .await
+            //     {
+            //         Ok(pid) => pid,
+            //         Err(_) => panic!("Failed to start koboldcpp"),
+            //     };
+            println!("Sending request to koboldcpp");
             let koboldtts_result = openai_tts_send_prompt(
-                &"http://localhost:5001/v1/audio/speech".to_owned(),
+                &"http://localhost:5001".to_owned(),
                 &output_filename.to_owned(),
                 &"kcpp".to_owned(),
                 &text.to_owned(),
@@ -120,6 +120,8 @@ async fn main() {
         &_ => todo!("Deal with this"),
     }
 
-    process_killer(&process_pid);
+    //TODO: Make a function to get the base address
+
+    // process_killer(&process_pid, &"koboldcpp".to_string());
     println!("Thanks for using llm-connect!");
 }
