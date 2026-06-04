@@ -135,9 +135,7 @@ struct KoboldChatConfig {
 
 fn koboldcpp_configure_chat(model: &String, original_command: Command) -> Command {
     let mut chat_command = Command::from(original_command);
-    chat_command
-        .arg("--model")
-        .arg(format!("{model}"));
+    chat_command.arg("--model").arg(format!("{model}"));
     return chat_command;
 }
 
@@ -199,19 +197,19 @@ impl KoboldChatConfig {
         let model = &self.model;
         let mut main_command = tokio::process::Command::new("koboldcpp");
         main_command
-        .arg("--host")
-        .arg(format!("{host}"))
-        .arg("--port")
-        .arg(format!("{port}"))
-        .arg("--gpulayers")
-        .arg("-1")
-        .arg("--threads")
-        // TODO: Autodetect this
-        // And optionally, let the user enter its value
-        .arg("16")
-        .arg("--usevulkan")
-        .arg ("--model")
-        .arg(format!("{model}"));
+            .arg("--host")
+            .arg(format!("{host}"))
+            .arg("--port")
+            .arg(format!("{port}"))
+            .arg("--gpulayers")
+            .arg("-1")
+            .arg("--threads")
+            // TODO: Autodetect this
+            // And optionally, let the user enter its value
+            .arg("16")
+            .arg("--usevulkan")
+            .arg("--model")
+            .arg(format!("{model}"));
         main_command.kill_on_drop(true);
         main_command
     }
@@ -262,17 +260,16 @@ pub async fn koboldcpp_start(
                 voice_refs_dir: voice_refs_dir.to_owned(),
             };
             final_command = kobold_config.build_command();
-        },
+        }
         "chat" => {
-                let kobold_config = KoboldChatConfig {
-                    mode: mode.to_owned(),
-                    host: host.to_owned(),
-                    port: port.to_owned(),
-                    model: model.to_owned(),
-                };
-                final_command = kobold_config.build_command();
-
-            },
+            let kobold_config = KoboldChatConfig {
+                mode: mode.to_owned(),
+                host: host.to_owned(),
+                port: port.to_owned(),
+                model: model.to_owned(),
+            };
+            final_command = kobold_config.build_command();
+        }
         &_ => println!("Whoops @ koboldcpp_start"),
     }
     // TODO: Make this print only by a flag
