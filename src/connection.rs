@@ -190,6 +190,7 @@ impl KoboldTTSConfig {
         main_command
     }
 }
+
 impl KoboldChatConfig {
     fn build_command(&self) -> tokio::process::Command {
         let host = &self.host;
@@ -229,6 +230,7 @@ async fn koboldcpp_spawn(command: &mut tokio::process::Command) {
     }
 }
 // Starts koboldcpp
+// TODO: make agnostic
 pub async fn koboldcpp_start(
     mode: &String,
     host: &String,
