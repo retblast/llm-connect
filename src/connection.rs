@@ -61,22 +61,6 @@ pub struct OpenAIChatResponse {
     pub choices: Vec<OpenAIChatResponseChoices>,
 }
 
-struct KoboldTTSConfig {
-    mode: String,
-    host: String,
-    port: u32,
-    model: String,
-    wavtokenizer: String,
-    voice_refs_dir: String,
-}
-
-struct KoboldChatConfig {
-    mode: String,
-    host: String,
-    port: u32,
-    model: String,
-}
-
 // fn build_llama_prompt(
 //     system_prompt: &String,
 //     user_prompt: &String,
@@ -158,63 +142,6 @@ pub async fn check_llm_alive_yet(address: &String) -> bool {
     return alive;
 }
 
-// Make it generic someday
-impl KoboldTTSConfig {
-    fn build_command(&self) -> tokio::process::Command {
-        let host = &self.host;
-        let port = &self.port;
-        let model = &self.model;
-        let wavtokenizer = &self.wavtokenizer;
-        let voice_refs_dir = &self.voice_refs_dir;
-        let mut main_command = tokio::process::Command::new("koboldcpp");
-        main_command
-            .arg("--host")
-            .arg(format!("{host}"))
-            .arg("--port")
-            .arg(format!("{port}"))
-            .arg("--gpulayers")
-            .arg("-1")
-            .arg("--threads")
-            // TODO: Autodetect this
-            // And optionally, let the user enter its value
-            .arg("16")
-            .arg("--usevulkan")
-            .arg("--ttsgpu")
-            .arg("--ttsmodel")
-            .arg(format!("{model}"))
-            .arg("--ttswavtokenizer")
-            .arg(format!("{wavtokenizer}"))
-            .arg("--ttsdir")
-            .arg(format!("{voice_refs_dir}"));
-        main_command.kill_on_drop(true);
-        main_command
-    }
-}
-
-impl KoboldChatConfig {
-    fn build_command(&self) -> tokio::process::Command {
-        let host = &self.host;
-        let port = &self.port;
-        let model = &self.model;
-        let mut main_command = tokio::process::Command::new("koboldcpp");
-        main_command
-            .arg("--host")
-            .arg(format!("{host}"))
-            .arg("--port")
-            .arg(format!("{port}"))
-            .arg("--gpulayers")
-            .arg("-1")
-            .arg("--threads")
-            // TODO: Autodetect this
-            // And optionally, let the user enter its value
-            .arg("16")
-            .arg("--usevulkan")
-            .arg("--model")
-            .arg(format!("{model}"));
-        main_command.kill_on_drop(true);
-        main_command
-    }
-}
 async fn koboldcpp_spawn(command: &mut tokio::process::Command) {
     loop {
         let mut koboldcpp_process = match command.spawn() {
@@ -252,24 +179,18 @@ pub async fn koboldcpp_start(
     // Just to have it initialized
     let mut final_command = match mode.as_str() {
         "tts" => {
-            let kobold_config = KoboldTTSConfig {
-                mode: mode.to_owned(),
-                host: host.to_owned(),
-                port: port.to_owned(),
+            let kobold_command = KoboldTTSConfig {
                 model: model.to_owned(),
                 wavtokenizer: wavtokenizer.to_owned(),
                 voice_refs_dir: voice_refs_dir.to_owned(),
             };
-            kobold_config.build_command()
+            kobold_command.build_command()
         }
         "chat" => {
-            let kobold_config = KoboldChatConfig {
-                mode: mode.to_owned(),
-                host: host.to_owned(),
-                port: port.to_owned(),
+            let kobold_command = KoboldChatConfig {
                 model: model.to_owned(),
             };
-            kobold_config.build_command()
+            kobold_command.build_command()
         }
         &_ => panic!("Whoops @ koboldcpp_start"),
     }
