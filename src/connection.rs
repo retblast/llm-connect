@@ -133,7 +133,7 @@ struct KoboldChatConfig {
 //     return tts_command;
 // }
 
-fn koboldcpp_configure_chat(model: &String, original_command: Command) -> Command {
+fn koboldcpp_configure_chat_command(model: &String, original_command: Command) -> Command {
     let mut chat_command = Command::from(original_command);
     chat_command.arg("--model").arg(format!("{model}"));
     return chat_command;
@@ -248,8 +248,7 @@ pub async fn koboldcpp_start(
         Err(why) => panic!("Failed to create stderr file, because of {}", why),
     };
     // Just to have it initialized
-    let mut final_command = tokio::process::Command::new("ls");
-    match mode.as_str() {
+    let mut final_command = match mode.as_str() {
         "tts" => {
             let kobold_config = KoboldTTSConfig {
                 mode: mode.to_owned(),
@@ -259,7 +258,7 @@ pub async fn koboldcpp_start(
                 wavtokenizer: wavtokenizer.to_owned(),
                 voice_refs_dir: voice_refs_dir.to_owned(),
             };
-            final_command = kobold_config.build_command();
+            kobold_config.build_command()
         }
         "chat" => {
             let kobold_config = KoboldChatConfig {
@@ -268,15 +267,16 @@ pub async fn koboldcpp_start(
                 port: port.to_owned(),
                 model: model.to_owned(),
             };
-            final_command = kobold_config.build_command();
+            kobold_config.build_command()
         }
-        &_ => println!("Whoops @ koboldcpp_start"),
+        &_ => panic!("Whoops @ koboldcpp_start"),
     }
     // TODO: Make this print only by a flag
     //println!("{:?}", final_command);
     //
     final_command.stdout(stdout_file);
     final_command.stderr(stderr_file);
+
     tokio::spawn(async move { koboldcpp_spawn(&mut final_command).await });
 }
 
