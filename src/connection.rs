@@ -7,6 +7,8 @@ use std::time::Duration;
 use std::{fs::File, process::Command};
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 
+use crate::config::KoboldConfig;
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Message {
     pub role: String,
@@ -158,14 +160,7 @@ async fn koboldcpp_spawn(command: &mut tokio::process::Command) {
 }
 // Starts koboldcpp
 // TODO: make agnostic
-pub async fn koboldcpp_start(
-    mode: &String,
-    host: &String,
-    port: &u32,
-    model: &String,
-    wavtokenizer: &String,
-    voice_refs_dir: &String,
-) {
+pub async fn koboldcpp_start(kobold_config: &KoboldConfig) {
     // KoboldCPP puts initialization details here, and its last line includes where the http api lies
     let stdout_file = match File::create("koboldcpp_stdout.txt") {
         Ok(file) => file,
@@ -176,24 +171,8 @@ pub async fn koboldcpp_start(
         Ok(file) => file,
         Err(why) => panic!("Failed to create stderr file, because of {}", why),
     };
-    // Just to have it initialized
-    let mut final_command = match mode.as_str() {
-        "tts" => {
-            let kobold_command = KoboldTTSConfig {
-                model: model.to_owned(),
-                wavtokenizer: wavtokenizer.to_owned(),
-                voice_refs_dir: voice_refs_dir.to_owned(),
-            };
-            kobold_command.build_command()
-        }
-        "chat" => {
-            let kobold_command = KoboldChatConfig {
-                model: model.to_owned(),
-            };
-            kobold_command.build_command()
-        }
-        &_ => panic!("Whoops @ koboldcpp_start"),
-    }
+    // Build the command
+    let mut final_command = kobold_config.build_command();
     // TODO: Make this print only by a flag
     //println!("{:?}", final_command);
     //

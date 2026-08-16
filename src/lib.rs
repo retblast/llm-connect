@@ -1,4 +1,5 @@
 // pub mod chat;
+pub mod config;
 pub mod connection;
 
 pub use connection::koboldcpp_start;
