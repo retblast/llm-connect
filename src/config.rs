@@ -1,5 +1,4 @@
-#[derive(Default)]
-struct KoboldConfig {
+pub struct KoboldConfig {
     host: String,
     port: u32,
     tts_config: Option<KoboldTTSConfig>,
@@ -7,27 +6,26 @@ struct KoboldConfig {
 }
 
 #[derive(Default)]
-struct KoboldTTSConfig {
+pub struct KoboldTTSConfig {
     model: String,
     wavtokenizer: String,
     voice_refs_dir: String,
 }
 
 #[derive(Default)]
-struct KoboldChatConfig {
+pub struct KoboldChatConfig {
     model: String,
 }
 
 impl KoboldConfig {
-    fn new(
-        mode: String,
+    pub fn new(
         host: String,
         port: u32,
         tts_config: Option<KoboldTTSConfig>,
         chat_config: Option<KoboldChatConfig>,
     ) -> Self {
         // Has to be one or both
-        assert!(chat.is_some() || tts.is_some());
+        assert!(tts_config.is_some() || chat_config.is_some());
         Self {
             host,
             port,
@@ -35,7 +33,9 @@ impl KoboldConfig {
             chat_config,
         }
     }
-    fn build_command(&self) -> tokio::process::Command {
+
+    // Build command, return it to store
+    pub fn build_command(&self) -> tokio::process::Command {
         let host = &self.host;
         let port = &self.port;
         let mut main_command = tokio::process::Command::new("koboldcpp");
@@ -62,16 +62,6 @@ impl KoboldConfig {
         }
 
         main_command
-    }
-}
-
-impl Default for KoboldConfig {
-    fn default() -> Self {
-        Self {
-            host: "127.0.0.1".into(),
-            port: 5001,
-            ..Default::default()
-        }
     }
 }
 
