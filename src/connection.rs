@@ -2,10 +2,10 @@
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use std::io::Write;
-use std::thread::{self, sleep};
 use std::time::Duration;
 use std::{fs::File, process::Command};
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+use tokio::time::sleep;
 
 use crate::config::KoboldConfig;
 
@@ -14,30 +14,6 @@ pub struct Message {
     pub role: String,
     pub content: String,
 }
-
-// #[derive(serde::Serialize)]
-// struct LlamaRequest {
-//     messages: Vec<Message>,
-//     temperature: f32,
-//     max_tokens: u32,
-// }
-
-// #[derive(serde::Deserialize)]
-// pub struct LlamaResponseChoices {
-//     pub message: Message,
-// }
-
-// #[derive(serde::Deserialize)]
-// pub struct LlamaResponse {
-//     pub choices: Vec<LlamaResponseChoices>,
-// }
-
-// #[derive(serde::Serialize)]
-// struct KoboldTTSRequest {
-//     model: String,
-//     input: String,
-//     voice: String,
-// }
 
 #[derive(serde::Serialize)]
 struct OpenAIVoiceRequest {
@@ -63,74 +39,14 @@ pub struct OpenAIChatResponse {
     pub choices: Vec<OpenAIChatResponseChoices>,
 }
 
-// fn build_llama_prompt(
-//     system_prompt: &String,
-//     user_prompt: &String,
-//     temperature: &f32,
-//     max_tokens: &u32,
-// ) -> OpenAIChatRequest {
-//     let system = Message {
-//         role: "system".to_string(),
-//         content: system_prompt.to_string(),
-//     };
-
-//     let user = Message {
-//         role: "user".to_string(),
-//         content: user_prompt.to_string(),
-//     };
-//     let request = OpenAIChatRequest {
-//         messages: vec![system, user],
-//         temperature: temperature.clone(),
-//         max_tokens: max_tokens.clone(),
-//     };
-//     return request;
-// }
-
-// Sends the prompt, and if all goes well
-// it returns the response, which is a vector of
-// "choices"
-// pub async fn llama_send_prompt(
-//     destination: &String,
-//     system_prompt: &String,
-//     user_prompt: &String,
-//     temperature: &f32,
-//     max_tokens: &u32,
-// ) -> Result<OpenAIChatResponse, reqwest::Error> {
-//     let client = reqwest::Client::new();
-//     let request = build_llama_prompt(system_prompt, user_prompt, temperature, max_tokens);
-//     let response: OpenAIChatResponse = client
-//         .post(destination)
-//         .json(&request)
-//         .send()
-//         .await?
-//         .json()
-//         .await?;
-//     return Ok(response);
-// }
-
-// fn koboldcpp_configure_tts(
-//     model_dir: &String,
-//     voice_refs_dir: &String,
-//     original_command: Command,
-// ) -> Command {
-//     let mut tts_command = Command::from(original_command);
-//     tts_command
-
-//     return tts_command;
-// }
-
-fn koboldcpp_configure_chat_command(model: &String, original_command: Command) -> Command {
-    let mut chat_command = Command::from(original_command);
-    chat_command.arg("--model").arg(format!("{model}"));
-    return chat_command;
-}
-
-pub async fn check_llm_alive_yet(address: &String) -> bool {
+pub async fn check_llm_alive_yet(address: &str, max_retries: u8) -> bool {
     let client = reqwest::Client::new();
     let mut alive = false;
-    while !alive {
+    let mut retries = max_retries;
+    while !alive && retries != 0 {
         println!("Checking if the openai api endpoint is alive");
-        sleep(Duration::new(1, 0));
+        println!("Retry: {}", retries);
+        sleep(Duration::new(1, 0)).await;
         let response = client.get(format!("{address}")).send().await;
         let response_code = match response {
             Ok(response_result) => response_result.status().as_u16(),
@@ -140,6 +56,7 @@ pub async fn check_llm_alive_yet(address: &String) -> bool {
             200 => true,
             _ => false,
         };
+        retries -= 1;
     }
     return alive;
 }
@@ -223,10 +140,12 @@ pub async fn openai_chat_send_prompt(
     user_prompt: &String,
     temperature: &f32,
     max_tokens: &u32,
+    max_retries: u8,
 ) -> Result<OpenAIChatResponse, reqwest::Error> {
     let client = reqwest::Client::new();
     let request = openai_chat_build_prompt(system_prompt, user_prompt, temperature, max_tokens);
-    if !check_llm_alive_yet(address).await {
+
+    if !check_llm_alive_yet(address, max_retries).await {
         println!("Waiting for koboldcpp to be ready...");
     };
     let response: OpenAIChatResponse = client
@@ -245,10 +164,11 @@ pub async fn openai_tts_send_prompt(
     model: &String,
     input: &String,
     voice: &String,
+    max_retries: u8,
 ) -> Result<File> {
     let client = reqwest::Client::new();
     let request = openai_tts_build_prompt(model, input, voice);
-    if !check_llm_alive_yet(address).await {
+    if !check_llm_alive_yet(address, max_retries).await {
         println!("Waiting for koboldcpp to be ready...");
     };
     let response = client
@@ -293,16 +213,3 @@ pub fn process_killer(pid_to_kill: &u32, process_name: &String) {
         ),
     };
 }
-// TODO: Revisit
-//fn build_prompt(
-//    model: &String,
-//    system_prompt: &String,
-//    user_prompt: &String,
-//    temperature: &f32,
-//    max_tokens: &u32,
-//) {
-//    match model {
-//        "llama" => build_llama_prompt(system_prompt, user_prompt, temperature, max_tokens),
-//    }
-//}
-//

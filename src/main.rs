@@ -3,6 +3,7 @@ use std::{thread::sleep, time::Duration};
 use crate::connection::{koboldcpp_start, openai_tts_send_prompt, process_killer};
 use clap::Parser;
 
+mod config;
 mod connection;
 
 #[derive(Parser)]
