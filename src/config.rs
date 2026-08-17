@@ -67,7 +67,7 @@ impl KoboldConfig {
 
 // Make it generic someday
 impl KoboldTTSConfig {
-    fn new(model: String, wavtokenizer: String, voice_refs_dir: String) -> Self {
+    pub fn new(model: String, wavtokenizer: String, voice_refs_dir: String) -> Self {
         Self {
             model,
             wavtokenizer,
@@ -91,7 +91,7 @@ impl KoboldTTSConfig {
 }
 
 impl KoboldChatConfig {
-    fn new(model: String) -> Self {
+    pub fn new(model: String) -> Self {
         Self { model }
     }
 
