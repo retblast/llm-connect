@@ -159,11 +159,11 @@ pub async fn openai_chat_send_prompt(
 }
 
 pub async fn openai_tts_send_prompt(
-    address: &String,
-    output_filename: &String,
-    model: &String,
-    input: &String,
-    voice: &String,
+    address: &str,
+    output_filename: &str,
+    model: &str,
+    input: &str,
+    voice: &str,
     max_retries: u8,
 ) -> Result<File> {
     let client = reqwest::Client::new();
