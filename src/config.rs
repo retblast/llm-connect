@@ -36,9 +36,23 @@ impl KoboldConfig {
         }
     }
 
+    // koboldcpp's --host arg prepends http://
+    // handle this ourselves
+    fn sanitize_host(host: &str) -> String {
+        match host.strip_prefix("http://") {
+            Some(stripped_host) => stripped_host.to_string(),
+            // TODO: Learn about that specialsauce Rust patterns thingy :P
+            // the one with the ||
+            None => match host.strip_prefix("https://") {
+                Some(stripped_host) => stripped_host.to_string(),
+                None => host.to_owned(),
+            },
+        }
+    }
+
     // Build command, return it to store
     pub fn build_command(&self) -> tokio::process::Command {
-        let host = &self.host;
+        let host = KoboldConfig::sanitize_host(&self.host);
         let port = &self.port;
         let mut main_command = tokio::process::Command::new("koboldcpp");
         main_command
