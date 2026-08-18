@@ -21,16 +21,16 @@ pub struct KoboldChatConfig {
 
 impl KoboldConfig {
     pub fn new(
-        host: String,
-        port: u32,
+        host: &str,
+        port: &u32,
         tts_config: Option<KoboldTTSConfig>,
         chat_config: Option<KoboldChatConfig>,
     ) -> Self {
         // Has to be one or both
         assert!(tts_config.is_some() || chat_config.is_some());
         Self {
-            host,
-            port,
+            host: host.to_string(),
+            port: port.to_owned(),
             tts_config,
             chat_config,
         }
@@ -69,11 +69,11 @@ impl KoboldConfig {
 
 // Make it generic someday
 impl KoboldTTSConfig {
-    pub fn new(model: String, wavtokenizer: String, voice_refs_dir: String) -> Self {
+    pub fn new(model: &str, wavtokenizer: &str, voice_refs_dir: &str) -> Self {
         Self {
-            model,
-            wavtokenizer,
-            voice_refs_dir,
+            model: model.to_string(),
+            wavtokenizer: wavtokenizer.to_string(),
+            voice_refs_dir: voice_refs_dir.to_string(),
         }
     }
 
@@ -93,8 +93,10 @@ impl KoboldTTSConfig {
 }
 
 impl KoboldChatConfig {
-    pub fn new(model: String) -> Self {
-        Self { model }
+    pub fn new(model: &str) -> Self {
+        Self {
+            model: model.to_string(),
+        }
     }
 
     fn build_command(&self, main_command: &mut tokio::process::Command) {
