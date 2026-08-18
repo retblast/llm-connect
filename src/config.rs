@@ -1,3 +1,5 @@
+// think of giving it a default someday
+#[derive(Default)]
 pub struct KoboldConfig {
     host: String,
     port: u32,
