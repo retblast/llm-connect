@@ -99,18 +99,18 @@ pub async fn koboldcpp_start(kobold_config: &KoboldConfig) {
     tokio::spawn(async move { koboldcpp_spawn(&mut final_command).await });
 }
 
-fn openai_tts_build_prompt(model: &String, input: &String, voice: &String) -> OpenAIVoiceRequest {
+fn openai_tts_build_prompt(model: &str, input: &str, voice: &str) -> OpenAIVoiceRequest {
     let request = OpenAIVoiceRequest {
-        model: model.clone(),
-        input: input.clone(),
-        voice: voice.clone(),
+        model: model.to_string(),
+        input: input.to_string(),
+        voice: voice.to_string(),
     };
     return request;
 }
 
 fn openai_chat_build_prompt(
-    system_prompt: &String,
-    user_prompt: &String,
+    system_prompt: &str,
+    user_prompt: &str,
     temperature: &f32,
     max_tokens: &u32,
 ) -> OpenAIChatRequest {
