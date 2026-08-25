@@ -131,6 +131,24 @@ fn openai_chat_build_prompt(
     return request;
 }
 
+#[derive(Debug)]
+pub enum LlmConnectionError {
+    Request(reqwest::Error),
+    IoError(std::io::Error),
+}
+
+impl From<reqwest::Error> for LlmConnectionError {
+    fn from(error: reqwest::Error) -> Self {
+        Self::Request(error)
+    }
+}
+
+impl From<std::io::Error> for LlmConnectionError {
+    fn from(error: std::io::Error) -> Self {
+        Self::IoError(error)
+    }
+}
+
 // Sends the prompt, and if all goes well
 // it returns the response, which is a vector of
 // "choices"
@@ -141,7 +159,7 @@ pub async fn openai_chat_send_prompt(
     temperature: &f32,
     max_tokens: &u32,
     max_retries: u8,
-) -> Result<OpenAIChatResponse, reqwest::Error> {
+) -> Result<OpenAIChatResponse, LlmConnectionError> {
     let client = reqwest::Client::new();
     let request = openai_chat_build_prompt(system_prompt, user_prompt, temperature, max_tokens);
 
@@ -158,6 +176,7 @@ pub async fn openai_chat_send_prompt(
     return Ok(response);
 }
 
+//TODO: think about whether I should return File or () later
 pub async fn openai_tts_send_prompt(
     address: &str,
     output_filename: &str,
@@ -165,7 +184,7 @@ pub async fn openai_tts_send_prompt(
     input: &str,
     voice: &str,
     max_retries: u8,
-) -> Result<File> {
+) -> Result<File, LlmConnectionError> {
     let client = reqwest::Client::new();
     let request = openai_tts_build_prompt(model, input, voice);
     if !check_llm_alive_yet(address, max_retries).await {
@@ -175,10 +194,9 @@ pub async fn openai_tts_send_prompt(
         .post(address.to_owned() + "/v1/audio/speech")
         .json(&request)
         .send()
-        .await
-        .context("Failed to send request to KoboldCPP")?;
+        .await?;
     //println!("{:?}", response);
-    let mut output_file = File::create(output_filename).context("Failed to create output file")?;
+    let mut output_file = File::create(output_filename)?;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         output_file
