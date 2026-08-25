@@ -1,6 +1,8 @@
 // All about connections
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::io::Write;
 use std::time::Duration;
 use std::{fs::File, process::Command};
@@ -140,6 +142,15 @@ pub enum LlmConnectionError {
 impl From<reqwest::Error> for LlmConnectionError {
     fn from(error: reqwest::Error) -> Self {
         Self::Request(error)
+    }
+}
+
+impl Display for LlmConnectionError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Request(error) => write!(f, "Failed to send request: {error}"),
+            Self::IoError(error) => write!(f, "Failed to save file: {error}"),
+        }
     }
 }
 
