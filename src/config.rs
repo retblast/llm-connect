@@ -87,11 +87,11 @@ impl KoboldConfig {
 
 // Make it generic someday
 impl KoboldTTSConfig {
-    pub fn new(model: PathBuf, wavtokenizer: PathBuf, voice_refs_dir: PathBuf) -> Self {
+    pub fn new(model: &PathBuf, wavtokenizer: &PathBuf, voice_refs_dir: &PathBuf) -> Self {
         Self {
-            model,
-            wavtokenizer,
-            voice_refs_dir,
+            model: model.to_owned(),
+            wavtokenizer: wavtokenizer.to_owned(),
+            voice_refs_dir: voice_refs_dir.to_owned(),
         }
     }
 
@@ -121,8 +121,10 @@ impl KoboldTTSConfig {
 }
 
 impl KoboldChatConfig {
-    pub fn new(model: PathBuf) -> Self {
-        Self { model }
+    pub fn new(model: &PathBuf) -> Self {
+        Self {
+            model: model.to_owned(),
+        }
     }
 
     fn build_command(
