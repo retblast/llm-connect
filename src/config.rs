@@ -1,3 +1,7 @@
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::path::PathBuf;
+
 // think of giving it a default someday
 #[derive(Default)]
 pub struct KoboldConfig {
@@ -9,14 +13,14 @@ pub struct KoboldConfig {
 
 #[derive(Default)]
 pub struct KoboldTTSConfig {
-    model: String,
-    wavtokenizer: String,
-    voice_refs_dir: String,
+    model: PathBuf,
+    wavtokenizer: PathBuf,
+    voice_refs_dir: PathBuf,
 }
 
 #[derive(Default)]
 pub struct KoboldChatConfig {
-    model: String,
+    model: PathBuf,
 }
 
 impl KoboldConfig {
@@ -83,18 +87,27 @@ impl KoboldConfig {
 
 // Make it generic someday
 impl KoboldTTSConfig {
-    pub fn new(model: &str, wavtokenizer: &str, voice_refs_dir: &str) -> Self {
+    pub fn new(model: PathBuf, wavtokenizer: PathBuf, voice_refs_dir: PathBuf) -> Self {
         Self {
-            model: model.to_string(),
-            wavtokenizer: wavtokenizer.to_string(),
-            voice_refs_dir: voice_refs_dir.to_string(),
+            model,
+            wavtokenizer,
+            voice_refs_dir,
         }
     }
 
-    fn build_command(&self, main_command: &mut tokio::process::Command) {
-        let model = &self.model;
-        let wavtokenizer = &self.wavtokenizer;
-        let voice_refs_dir = &self.voice_refs_dir;
+    fn build_command(
+        &self,
+        main_command: &mut tokio::process::Command,
+    ) -> Result<(), LlmConfigError> {
+        let model = &self.model.to_str().ok_or(LlmConfigError::CantParsePath)?;
+        let wavtokenizer = &self
+            .wavtokenizer
+            .to_str()
+            .ok_or(LlmConfigError::CantParsePath)?;
+        let voice_refs_dir = &self
+            .voice_refs_dir
+            .to_str()
+            .ok_or(LlmConfigError::CantParsePath)?;
         main_command
             .arg("--ttsgpu")
             .arg("--ttsmodel")
@@ -103,18 +116,34 @@ impl KoboldTTSConfig {
             .arg(format!("{wavtokenizer}"))
             .arg("--ttsdir")
             .arg(format!("{voice_refs_dir}"));
+        Ok(())
     }
 }
 
 impl KoboldChatConfig {
-    pub fn new(model: &str) -> Self {
-        Self {
-            model: model.to_string(),
-        }
+    pub fn new(model: PathBuf) -> Self {
+        Self { model }
     }
 
-    fn build_command(&self, main_command: &mut tokio::process::Command) {
-        let model = &self.model;
+    fn build_command(
+        &self,
+        main_command: &mut tokio::process::Command,
+    ) -> Result<(), LlmConfigError> {
+        let model = &self.model.to_str().ok_or(LlmConfigError::CantParsePath)?;
         main_command.arg("--model").arg(format!("{model}"));
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+enum LlmConfigError {
+    CantParsePath,
+}
+
+impl Display for LlmConfigError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CantParsePath => write!(f, "Can't parse path"),
+        }
     }
 }
