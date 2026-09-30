@@ -1,17 +1,14 @@
 // All about connections
 use crate::config::KoboldConfig;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures_util::StreamExt;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fs::File;
-use std::io::Write;
-use std::process::Command;
 use std::time::Duration;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
-use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-
+use tokio::time::sleep;
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Message {
     pub role: String,
@@ -142,6 +139,8 @@ fn openai_chat_build_prompt(
 #[derive(Debug)]
 pub enum LlmConnectionError {
     Request(reqwest::Error),
+    Decode(reqwest::Error),
+    Body(reqwest::Error),
     IoError(std::io::Error),
     FailedToStart,
     NotReady,
@@ -154,6 +153,13 @@ pub enum LlmConnectionError {
 
 impl From<reqwest::Error> for LlmConnectionError {
     fn from(error: reqwest::Error) -> Self {
+        if error.is_decode() {
+            return Self::Decode(error);
+        }
+        if error.is_body() {
+            return Self::Body(error);
+        }
+
         Self::Request(error)
     }
 }
@@ -161,14 +167,26 @@ impl From<reqwest::Error> for LlmConnectionError {
 impl Display for LlmConnectionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Request(error) => write!(f, "Failed to send request: {error}"),
-            Self::IoError(error) => write!(f, "Failed to save file: {error}"),
-            Self::FailedToStart => write!(f, "Failed to start"),
-            Self::NotReady => write!(f, "Not ready yet"),
-            Self::UnexpectedResponse { code, reason, body } => write!(
+            Self::Request(error) => match error.url() {
+                Some(url) => write!(f, "Failed to send request to {url} due to {error}"),
+                None => write!(f, "Request never reached server due to  {error}"),
+            },
+            Self::Decode(error) => write!(f, "Can't parse server response due to {error}"),
+            Self::Body(error) => write!(
                 f,
-                "Unexpected response.\nCode: {code}\nReason: {reason}\nBody: {body}"
+                "Connection lost when reading the response body due to {error}"
             ),
+            Self::IoError(error) => write!(f, "File operation failed due to {error}"),
+            Self::FailedToStart => write!(f, "Failed to start"),
+            Self::NotReady => write!(f, "LLM wasn't ready on time."),
+            Self::UnexpectedResponse { code, reason, body } => {
+                // It's recommended to truncate the body here
+                let mut truncated_body: String = body.chars().take(500).collect();
+                write!(
+                    f,
+                    "Unexpected response.\nCode: {code}\nReason: {reason}\nBody: {truncated_body}",
+                )
+            }
         }
     }
 }
@@ -177,6 +195,25 @@ impl From<std::io::Error> for LlmConnectionError {
     fn from(error: std::io::Error) -> Self {
         Self::IoError(error)
     }
+}
+
+// check if we are getting something usable
+async fn ensure_success(
+    response: reqwest::Response,
+) -> Result<reqwest::Response, LlmConnectionError> {
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await?;
+        return Err(LlmConnectionError::UnexpectedResponse {
+            code: status.as_u16(),
+            reason: status
+                .canonical_reason()
+                .unwrap_or("unknown reason")
+                .to_owned(),
+            body,
+        });
+    }
+    Ok(response)
 }
 
 // Sends the prompt, and if all goes well
@@ -194,29 +231,16 @@ pub async fn openai_chat_send_prompt(
     let request = openai_chat_build_prompt(system_prompt, user_prompt, temperature, max_tokens);
 
     check_llm_alive_yet(address, max_retries).await?;
-    let response = client
-        .post(address.to_owned() + "/v1/chat/completions")
-        .json(&request)
-        .send()
-        .await?;
+    let response = ensure_success(
+        client
+            .post(address.to_owned() + "/v1/chat/completions")
+            .json(&request)
+            .send()
+            .await?,
+    )
+    .await?;
 
-    // check if we are getting something usable
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await?;
-        return Err(LlmConnectionError::UnexpectedResponse {
-            code: status.as_u16(),
-            reason: status
-                .canonical_reason()
-                .unwrap_or("unknown reason")
-                .to_owned(),
-            body,
-        });
-    }
-
-    let response: OpenAIChatResponse = response.json().await?;
-
-    return Ok(response);
+    return Ok(response.json().await?);
 }
 
 //TODO: think about whether I should return File or () later
@@ -231,30 +255,19 @@ pub async fn openai_tts_send_prompt(
     let client = reqwest::Client::new();
     let request = openai_tts_build_prompt(model, input, voice);
     check_llm_alive_yet(address, max_retries).await?;
-    let response = client
-        .post(address.to_owned() + "/v1/audio/speech")
-        .json(&request)
-        .send()
-        .await?;
-
-    // check if we are getting something usable
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await?;
-        return Err(LlmConnectionError::UnexpectedResponse {
-            code: status.as_u16(),
-            reason: status
-                .canonical_reason()
-                .unwrap_or("unknown reason")
-                .to_owned(),
-            body,
-        });
-    }
+    let response = ensure_success(
+        client
+            .post(address.to_owned() + "/v1/audio/speech")
+            .json(&request)
+            .send()
+            .await?,
+    )
+    .await?;
 
     let mut output_file = tokio::fs::File::create(output_filename).await?;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        output_file.write_all(&chunk?);
+        output_file.write_all(&chunk?).await?;
     }
     output_file.flush().await?;
     Ok(())
