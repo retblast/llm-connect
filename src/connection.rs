@@ -1,15 +1,16 @@
 // All about connections
+use crate::config::KoboldConfig;
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::fs::File;
 use std::io::Write;
+use std::process::Command;
 use std::time::Duration;
-use std::{fs::File, process::Command};
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
-use tokio::time::sleep;
-
-use crate::config::KoboldConfig;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Message {
@@ -41,14 +42,15 @@ pub struct OpenAIChatResponse {
     pub choices: Vec<OpenAIChatResponseChoices>,
 }
 
-pub async fn check_llm_alive_yet(address: &str, max_retries: u8) -> bool {
+pub async fn check_llm_alive_yet(address: &str, max_retries: u8) -> Result<(), LlmConnectionError> {
     let client = reqwest::Client::new();
     let mut alive = false;
+    let mut interval = 1;
     let mut retries = max_retries;
     while !alive && retries != 0 {
         println!("Checking if the openai api endpoint is alive");
         println!("Retry: {}", retries);
-        sleep(Duration::new(1, 0)).await;
+        sleep(Duration::new(interval, 0)).await;
         let response = client.get(format!("{address}")).send().await;
         let response_code = match response {
             Ok(response_result) => response_result.status().as_u16(),
@@ -59,8 +61,12 @@ pub async fn check_llm_alive_yet(address: &str, max_retries: u8) -> bool {
             _ => false,
         };
         retries -= 1;
+        interval *= 2;
     }
-    return alive;
+    match alive {
+        true => return Ok(()),
+        false => return Err(LlmConnectionError::NotReady),
+    }
 }
 
 async fn koboldcpp_spawn(command: &mut tokio::process::Command) {
@@ -137,6 +143,13 @@ fn openai_chat_build_prompt(
 pub enum LlmConnectionError {
     Request(reqwest::Error),
     IoError(std::io::Error),
+    FailedToStart,
+    NotReady,
+    UnexpectedResponse {
+        code: u16,
+        reason: String,
+        body: String,
+    },
 }
 
 impl From<reqwest::Error> for LlmConnectionError {
@@ -150,6 +163,12 @@ impl Display for LlmConnectionError {
         match self {
             Self::Request(error) => write!(f, "Failed to send request: {error}"),
             Self::IoError(error) => write!(f, "Failed to save file: {error}"),
+            Self::FailedToStart => write!(f, "Failed to start"),
+            Self::NotReady => write!(f, "Not ready yet"),
+            Self::UnexpectedResponse { code, reason, body } => write!(
+                f,
+                "Unexpected response.\nCode: {code}\nReason: {reason}\nBody: {body}"
+            ),
         }
     }
 }
@@ -174,16 +193,29 @@ pub async fn openai_chat_send_prompt(
     let client = reqwest::Client::new();
     let request = openai_chat_build_prompt(system_prompt, user_prompt, temperature, max_tokens);
 
-    if !check_llm_alive_yet(address, max_retries).await {
-        println!("Waiting for koboldcpp to be ready...");
-    };
-    let response: OpenAIChatResponse = client
+    check_llm_alive_yet(address, max_retries).await?;
+    let response = client
         .post(address.to_owned() + "/v1/chat/completions")
         .json(&request)
         .send()
-        .await?
-        .json()
         .await?;
+
+    // check if we are getting something usable
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await?;
+        return Err(LlmConnectionError::UnexpectedResponse {
+            code: status.as_u16(),
+            reason: status
+                .canonical_reason()
+                .unwrap_or("unknown reason")
+                .to_owned(),
+            body,
+        });
+    }
+
+    let response: OpenAIChatResponse = response.json().await?;
+
     return Ok(response);
 }
 
@@ -195,26 +227,37 @@ pub async fn openai_tts_send_prompt(
     input: &str,
     voice: &str,
     max_retries: u8,
-) -> Result<File, LlmConnectionError> {
+) -> Result<(), LlmConnectionError> {
     let client = reqwest::Client::new();
     let request = openai_tts_build_prompt(model, input, voice);
-    if !check_llm_alive_yet(address, max_retries).await {
-        println!("Waiting for koboldcpp to be ready...");
-    };
+    check_llm_alive_yet(address, max_retries).await?;
     let response = client
         .post(address.to_owned() + "/v1/audio/speech")
         .json(&request)
         .send()
         .await?;
-    //println!("{:?}", response);
-    let mut output_file = File::create(output_filename)?;
+
+    // check if we are getting something usable
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await?;
+        return Err(LlmConnectionError::UnexpectedResponse {
+            code: status.as_u16(),
+            reason: status
+                .canonical_reason()
+                .unwrap_or("unknown reason")
+                .to_owned(),
+            body,
+        });
+    }
+
+    let mut output_file = tokio::fs::File::create(output_filename).await?;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        output_file
-            .write_all(&chunk?)
-            .expect("Failed writing the chunks");
+        output_file.write_all(&chunk?);
     }
-    Ok(output_file)
+    output_file.flush().await?;
+    Ok(())
 }
 
 // Just kills a process by its pid
