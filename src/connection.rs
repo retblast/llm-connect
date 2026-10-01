@@ -169,7 +169,7 @@ impl Display for LlmConnectionError {
         match self {
             Self::Request(error) => match error.url() {
                 Some(url) => write!(f, "Failed to send request to {url} due to {error}"),
-                None => write!(f, "Request never reached server due to  {error}"),
+                None => write!(f, "Request never reached server due to {error}"),
             },
             Self::Decode(error) => write!(f, "Can't parse server response due to {error}"),
             Self::Body(error) => write!(
@@ -181,7 +181,7 @@ impl Display for LlmConnectionError {
             Self::NotReady => write!(f, "LLM wasn't ready on time."),
             Self::UnexpectedResponse { code, reason, body } => {
                 // It's recommended to truncate the body here
-                let mut truncated_body: String = body.chars().take(500).collect();
+                let truncated_body: String = body.chars().take(500).collect();
                 write!(
                     f,
                     "Unexpected response.\nCode: {code}\nReason: {reason}\nBody: {truncated_body}",
@@ -243,7 +243,6 @@ pub async fn openai_chat_send_prompt(
     return Ok(response.json().await?);
 }
 
-//TODO: think about whether I should return File or () later
 pub async fn openai_tts_send_prompt(
     address: &str,
     output_filename: &str,
@@ -266,11 +265,42 @@ pub async fn openai_tts_send_prompt(
 
     let mut output_file = tokio::fs::File::create(output_filename).await?;
     let mut stream = response.bytes_stream();
+    let mut file_outcome = Ok(());
     while let Some(chunk) = stream.next().await {
-        output_file.write_all(&chunk?).await?;
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(why) => {
+                file_outcome = Err(why.into());
+                break;
+            }
+        };
+
+        if let Err(why) = output_file.write_all(&chunk).await {
+            file_outcome = Err(why.into());
+            break;
+        }
     }
-    output_file.flush().await?;
-    Ok(())
+
+    match file_outcome {
+        Ok(()) => {
+            if let Err(flush_why) = output_file.flush().await {
+                if let Err(io_remove_why) = tokio::fs::remove_file(output_filename).await {
+                    eprintln!(
+                        "failed to remove the partial file {output_filename} due to {io_remove_why}"
+                    )
+                }
+                file_outcome = Err(flush_why.into());
+            }
+        }
+        Err(why) => {
+            if let Err(io_why) = tokio::fs::remove_file(output_filename).await {
+                eprintln!("failed to remove the partial file {output_filename} due to {io_why}")
+            }
+            return Err(why);
+        }
+    }
+
+    file_outcome
 }
 
 // Just kills a process by its pid
