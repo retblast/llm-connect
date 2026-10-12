@@ -55,7 +55,7 @@ impl KoboldConfig {
     }
 
     // Build command, return it to store
-    pub fn build_command(&self) -> tokio::process::Command {
+    pub fn build_command(&self) -> Result<tokio::process::Command, Error> {
         let host = KoboldConfig::sanitize_host(&self.host);
         let port = &self.port;
         let mut main_command = tokio::process::Command::new("koboldcpp");
@@ -74,14 +74,14 @@ impl KoboldConfig {
         main_command.kill_on_drop(true);
 
         if let Some(chat_config) = &self.chat_config {
-            chat_config.build_command(&mut main_command);
+            chat_config.build_command(&mut main_command)?;
         }
 
         if let Some(tts_config) = &self.tts_config {
-            tts_config.build_command(&mut main_command);
+            tts_config.build_command(&mut main_command)?;
         }
 
-        main_command
+        Ok(main_command)
     }
 }
 
@@ -95,19 +95,16 @@ impl KoboldTTSConfig {
         }
     }
 
-    fn build_command(
-        &self,
-        main_command: &mut tokio::process::Command,
-    ) -> Result<(), LlmConfigError> {
-        let model = &self.model.to_str().ok_or(LlmConfigError::CantParsePath)?;
-        let wavtokenizer = &self
-            .wavtokenizer
-            .to_str()
-            .ok_or(LlmConfigError::CantParsePath)?;
-        let voice_refs_dir = &self
-            .voice_refs_dir
-            .to_str()
-            .ok_or(LlmConfigError::CantParsePath)?;
+    fn build_command(&self, main_command: &mut tokio::process::Command) -> Result<(), Error> {
+        let model = &self.model.to_str().ok_or(Error::CantParsePath {
+            what: "model".to_string(),
+        })?;
+        let wavtokenizer = &self.wavtokenizer.to_str().ok_or(Error::CantParsePath {
+            what: "wavtokenizer".to_string(),
+        })?;
+        let voice_refs_dir = &self.voice_refs_dir.to_str().ok_or(Error::CantParsePath {
+            what: "voice references directory".to_string(),
+        })?;
         main_command
             .arg("--ttsgpu")
             .arg("--ttsmodel")
@@ -127,25 +124,32 @@ impl KoboldChatConfig {
         }
     }
 
-    fn build_command(
-        &self,
-        main_command: &mut tokio::process::Command,
-    ) -> Result<(), LlmConfigError> {
-        let model = &self.model.to_str().ok_or(LlmConfigError::CantParsePath)?;
+    fn build_command(&self, main_command: &mut tokio::process::Command) -> Result<(), Error> {
+        let model = &self.model.to_str().ok_or(Error::CantParsePath {
+            what: "model".to_string(),
+        })?;
         main_command.arg("--model").arg(format!("{model}"));
         Ok(())
     }
 }
 
 #[derive(Debug)]
-enum LlmConfigError {
-    CantParsePath,
+pub enum Error {
+    CantParsePath { what: String },
 }
 
-impl Display for LlmConfigError {
+impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::CantParsePath => write!(f, "Can't parse path"),
+            Self::CantParsePath { what } => write!(f, "Can't parse the {what} path"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::CantParsePath { .. } => None,
         }
     }
 }
