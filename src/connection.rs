@@ -1,13 +1,24 @@
 // All about connections
 use anyhow::Result;
 use futures_util::StreamExt;
+use reqwest::Client;
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::time::sleep;
 
 use crate::config;
+
+static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(5))
+        .build()
+        .expect("Failed to initialize the HTTTP client.")
+});
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Message {
     pub role: String,
@@ -39,7 +50,6 @@ pub struct OpenAIChatResponse {
 }
 
 pub async fn check_llm_alive_yet(address: &str, max_retries: u8) -> Result<(), Error> {
-    let client = reqwest::Client::new();
     let mut alive = false;
     let mut interval = 1;
     let mut retries = max_retries;
@@ -47,7 +57,7 @@ pub async fn check_llm_alive_yet(address: &str, max_retries: u8) -> Result<(), E
         println!("Checking if the openai api endpoint is alive");
         println!("Retry: {}", retries);
         sleep(Duration::new(interval, 0)).await;
-        let response = client.get(format!("{address}")).send().await;
+        let response = HTTP_CLIENT.get(format!("{address}")).send().await;
         let response_code = match response {
             Ok(response_result) => response_result.status().as_u16(),
             Err(_) => 0,
@@ -209,14 +219,10 @@ pub async fn openai_chat_send_prompt(
     max_tokens: &u32,
     max_retries: u8,
 ) -> Result<OpenAIChatResponse, Error> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .connect_timeout(Duration::from_secs(5))
-        .build()?;
     let request = openai_chat_build_prompt(system_prompt, user_prompt, temperature, max_tokens);
     check_llm_alive_yet(address, max_retries).await?;
     let response = ensure_success(
-        client
+        HTTP_CLIENT
             .post(address.to_owned() + "/v1/chat/completions")
             .json(&request)
             .send()
@@ -239,14 +245,10 @@ pub async fn openai_tts_send_prompt(
     voice: &str,
     max_retries: u8,
 ) -> Result<(), Error> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .connect_timeout(Duration::from_secs(5))
-        .build()?;
     let request = openai_tts_build_prompt(model, input, voice);
     check_llm_alive_yet(address, max_retries).await?;
     let response = ensure_success(
-        client
+        HTTP_CLIENT
             .post(address.to_owned() + "/v1/audio/speech")
             .json(&request)
             .send()
