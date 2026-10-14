@@ -29,15 +29,18 @@ impl KoboldConfig {
         port: &u32,
         tts_config: Option<KoboldTTSConfig>,
         chat_config: Option<KoboldChatConfig>,
-    ) -> Self {
+    ) -> Result<Self, Error> {
         // Has to be one or both
-        assert!(tts_config.is_some() || chat_config.is_some());
-        Self {
+        if (tts_config.is_some() || chat_config.is_some()) {
+            return Err(Error::EmptyConfig);
+        }
+
+        Ok(Self {
             host: host.to_string(),
             port: port.to_owned(),
             tts_config,
             chat_config,
-        }
+        })
     }
 
     // koboldcpp's --host arg prepends http://
@@ -136,12 +139,14 @@ impl KoboldChatConfig {
 #[derive(Debug)]
 pub enum Error {
     CantParsePath { what: String },
+    EmptyConfig,
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::CantParsePath { what } => write!(f, "Can't parse the {what} path"),
+            Self::EmptyConfig => write!(f, "No configuration was supplied."),
         }
     }
 }
@@ -150,6 +155,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::CantParsePath { .. } => None,
+            Error::EmptyConfig => None,
         }
     }
 }
