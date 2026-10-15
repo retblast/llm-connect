@@ -56,18 +56,24 @@ pub async fn check_llm_alive_yet(address: &str, max_retries: u8) -> Result<(), E
     while !alive && retries != 0 {
         println!("Checking if the openai api endpoint is alive");
         println!("Retry: {}", retries);
-        sleep(Duration::new(interval, 0)).await;
-        let response = HTTP_CLIENT.get(format!("{address}")).send().await;
+        let response = HTTP_CLIENT.get(address).send().await;
         let response_code = match response {
             Ok(response_result) => response_result.status().as_u16(),
-            Err(_) => 0,
+            Err(why) => {
+                eprintln!(
+                    "Failure when attempting to check availability of the koboldcpp instance due to {why}"
+                );
+                0
+            }
         };
         alive = match response_code {
             200 => true,
             _ => false,
         };
+        sleep(Duration::new(interval, 0)).await;
         retries -= 1;
-        interval *= 2;
+        //TODO: maybe there's something better for this
+        interval = interval.saturating_mul(2);
     }
     match alive {
         true => return Ok(()),
@@ -87,8 +93,8 @@ fn openai_tts_build_prompt(model: &str, input: &str, voice: &str) -> OpenAIVoice
 fn openai_chat_build_prompt(
     system_prompt: &str,
     user_prompt: &str,
-    temperature: &f32,
-    max_tokens: &u32,
+    temperature: f32,
+    max_tokens: u32,
 ) -> OpenAIChatRequest {
     let system = Message {
         role: "system".to_string(),
@@ -212,11 +218,11 @@ async fn ensure_success(response: reqwest::Response) -> Result<reqwest::Response
 // it returns the response, which is a vector of
 // "choices"
 pub async fn openai_chat_send_prompt(
-    address: &String,
-    system_prompt: &String,
-    user_prompt: &String,
-    temperature: &f32,
-    max_tokens: &u32,
+    address: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    temperature: f32,
+    max_tokens: u32,
     max_retries: u8,
 ) -> Result<OpenAIChatResponse, Error> {
     let request = openai_chat_build_prompt(system_prompt, user_prompt, temperature, max_tokens);

@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::path::Path;
 use std::path::PathBuf;
-
 // think of giving it a default someday
 #[derive(Default)]
 pub struct KoboldConfig {
@@ -90,7 +90,7 @@ impl KoboldConfig {
 
 // Make it generic someday
 impl KoboldTTSConfig {
-    pub fn new(model: &PathBuf, wavtokenizer: &PathBuf, voice_refs_dir: &PathBuf) -> Self {
+    pub fn new(model: &Path, wavtokenizer: &Path, voice_refs_dir: &Path) -> Self {
         Self {
             model: model.to_owned(),
             wavtokenizer: wavtokenizer.to_owned(),
@@ -121,7 +121,7 @@ impl KoboldTTSConfig {
 }
 
 impl KoboldChatConfig {
-    pub fn new(model: &PathBuf) -> Self {
+    pub fn new(model: &Path) -> Self {
         Self {
             model: model.to_owned(),
         }
