@@ -87,7 +87,7 @@ fn openai_tts_build_prompt(model: &str, input: &str, voice: &str) -> OpenAIVoice
         input: input.to_string(),
         voice: voice.to_string(),
     };
-    return request;
+    request
 }
 
 fn openai_chat_build_prompt(
@@ -110,7 +110,7 @@ fn openai_chat_build_prompt(
         temperature: temperature.clone(),
         max_tokens: max_tokens.clone(),
     };
-    return request;
+    request
 }
 
 #[derive(Debug)]

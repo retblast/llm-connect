@@ -3,7 +3,6 @@ use std::fmt::Formatter;
 use std::path::Path;
 use std::path::PathBuf;
 // think of giving it a default someday
-#[derive(Default)]
 pub struct KoboldConfig {
     host: String,
     port: u32,
@@ -31,7 +30,7 @@ impl KoboldConfig {
         chat_config: Option<KoboldChatConfig>,
     ) -> Result<Self, Error> {
         // Has to be one or both
-        if (tts_config.is_some() || chat_config.is_some()) {
+        if tts_config.is_some() || chat_config.is_some() {
             return Err(Error::EmptyConfig);
         }
 
@@ -64,9 +63,9 @@ impl KoboldConfig {
         let mut main_command = tokio::process::Command::new("koboldcpp");
         main_command
             .arg("--host")
-            .arg(format!("{host}"))
+            .arg(host)
             .arg("--port")
-            .arg(format!("{port}"))
+            .arg(port.to_string())
             .arg("--gpulayers")
             .arg("-1")
             .arg("--threads")
@@ -111,11 +110,11 @@ impl KoboldTTSConfig {
         main_command
             .arg("--ttsgpu")
             .arg("--ttsmodel")
-            .arg(format!("{model}"))
+            .arg(model)
             .arg("--ttswavtokenizer")
-            .arg(format!("{wavtokenizer}"))
+            .arg(wavtokenizer)
             .arg("--ttsdir")
-            .arg(format!("{voice_refs_dir}"));
+            .arg(voice_refs_dir);
         Ok(())
     }
 }
@@ -131,7 +130,7 @@ impl KoboldChatConfig {
         let model = &self.model.to_str().ok_or(Error::CantParsePath {
             what: "model".to_string(),
         })?;
-        main_command.arg("--model").arg(format!("{model}"));
+        main_command.arg("--model").arg(model);
         Ok(())
     }
 }
