@@ -3,6 +3,7 @@ use std::fmt::Formatter;
 use std::path::Path;
 use std::path::PathBuf;
 // think of giving it a default someday
+#[derive(Debug)]
 pub struct KoboldConfig {
     host: String,
     port: u32,
@@ -10,14 +11,14 @@ pub struct KoboldConfig {
     chat_config: Option<KoboldChatConfig>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct KoboldTTSConfig {
     model: PathBuf,
     wavtokenizer: PathBuf,
     voice_refs_dir: PathBuf,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct KoboldChatConfig {
     model: PathBuf,
 }
