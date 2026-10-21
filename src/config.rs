@@ -31,7 +31,7 @@ impl KoboldConfig {
         chat_config: Option<KoboldChatConfig>,
     ) -> Result<Self, Error> {
         // Has to be one or both
-        if !tts_config.is_some() || !chat_config.is_some() {
+        if tts_config.is_none() || chat_config.is_none() {
             return Err(Error::EmptyConfig);
         }
 
